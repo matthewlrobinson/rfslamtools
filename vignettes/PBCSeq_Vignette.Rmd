@@ -21,7 +21,7 @@ install_github("mattrosen/RFSLAM")
 
 Then, to get the forward facing functions which we will use in the vigentte, run the following command:
 ```{r}
-install_github("dshenker/RFSLAM")
+install_github("matthewlrobinson/rfslamtools")
 ```
 
 At this point, both RFSLAM packages should be installed and we can proceed to loading in the other necessary packages.
@@ -40,7 +40,7 @@ library(rpart.plot)
 library(purrr)
 library(readr)
 library(slider)
-library(RFSLAM)
+library(rfslamtools)
 library(tidyr)
 library(pROC)
 library(ggplot2)
@@ -51,7 +51,7 @@ library(ggplot2)
 Let's load in the data. Additionally, we load a csv file which maps variables to their descriptions, called `var_key`. This is used for plotting feature importance later on.
 ```{r}
 data(pbc, package="survival")
-var_key <- read_csv("~/workspace/SAFE/code/SLAM_ML/dshenker/RFSLAM_PACKAGE/RFSLAM/vignettes/var_key.csv") #example variable key
+var_key <-read_csv("https://raw.githubusercontent.com/matthewlrobinson/rfslamtools/main/vignettes/var_key.csv") #example variable key
 ```
 
 RF-SLAM currently only supports binary classification. Thus, we convert the labels here into ones where we have either a death or no death.
