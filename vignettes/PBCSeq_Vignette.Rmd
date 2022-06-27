@@ -405,7 +405,8 @@ analysis_plots(df, "label", "pid", "p.hat", "cpiu", analysis_vars)
 ## Interpretation of Plots
 ### Calibration 
 The calibration plot shows the relationship between the predicted and observed event probabilities. In particular, a well calibrated model will be one where the values align and a straight line forms on the dotted line in the plot. Here, we see that there are times where we deviate and under predict the event probability, but overall this is satisfactory.
-
+```{r display calibration plot}
+```
 ### Rpart Tree
 The rpart tree is a summary representation of the random forest using a single tree. In particular, it is the result of training a regression tree on the outputted predicted probabilities. Then, we plot a visual representation of the tree so we can understand the predictions. This is a particularly useful technique for clinicians looking to understand their models.
 
