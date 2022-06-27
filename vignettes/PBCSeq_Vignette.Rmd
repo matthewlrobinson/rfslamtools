@@ -1,4 +1,4 @@
- ---
+--
 title: "PC"
 output: html_document
 ---
@@ -16,36 +16,38 @@ To begin, let's load some packages we will need for the data processing, as well
 
 To get the RFSLAM source code, run the following command:
 ```{r}
-install_github("mattrosen/RFSLAM")
+tryCatch(
+  {find.package('rfSLAM')},
+  error=function(e){remotes::install_github("mattrosen/RFSLAM")}
+)
 ```
 
-Then, to get the forward facing functions which we will use in the vigentte, run the following command:
+Then, to get the forward facing functions which we will use in the vingette, run the following command:
 ```{r}
-install_github("matthewlrobinson/rfslamtools")
+tryCatch(
+  {find.package('rfslamtools')},
+  error=function(e){remotes::install_github("matthewlrobinson/rfslamtools")}
+)
 ```
 
 At this point, both RFSLAM packages should be installed and we can proceed to loading in the other necessary packages.
 
+
 ```{r}
 library(ggRandomForests)
 library(rfSLAM)
-library(plyr)
-library(dplyr)
+library(tidyverse)
 library(grid)
 library(gridExtra)
 library(ggsci)
 library(rpart)
 library(splines)
 library(rpart.plot)
-library(purrr)
-library(readr)
 library(slider)
 library(rfslamtools)
-library(tidyr)
 library(pROC)
-library(ggplot2)
+library(caret)
 ```
-
 
 
 Let's load in the data. Additionally, we load a csv file which maps variables to their descriptions, called `var_key`. This is used for plotting feature importance later on.
@@ -56,30 +58,26 @@ var_key <-read_csv("https://raw.githubusercontent.com/matthewlrobinson/rfslamtoo
 
 RF-SLAM currently only supports binary classification. Thus, we convert the labels here into ones where we have either a death or no death.
 ```{r}
-pbcseq$status <- ifelse(pbcseq$status == 2, 1, 0)
-
-library(dplyr)
-pbcseq <- pbcseq %>% mutate(next_id = lead(id))
-
-pbcseq[is.na(pbcseq$next_id), "next_id"] <- max(pbcseq$id)
-
-pbcseq$death <- 0
-pbcseq[(pbcseq$id != pbcseq$next_id) & (pbcseq$status == 1), "death"] <- 1
-pbcseq <- pbcseq %>% select(-c(next_id))
+pbcseq <- pbcseq %>% 
+  arrange(id, futime) %>% 
+  mutate(status = if_else(status == 2, 1, 0), 
+    next_id = lead(id),
+    next_id = if_else(is.na(next_id),max(id),next_id),
+    death = if_else(id != next_id & status == 1,1,0)) %>% 
+  select(-next_id)
 ```
 
 
 
 RF-SLAM requires data to be in the format where there is one row per each patient's CPIU. A CPIU is a person-time interval that has a length determine by the user based on what is clinically relevant. Here, we choose to use CPIU length's of 100 days. To start, We need to figure out what the maximum time multiple of 100 days is for each patient.
 ```{r}
-pbcseq$max_cpiu <- (round_any(pbcseq$futime, 100, f = floor) / 100) + 1
+pbcseq$max_cpiu <- (plyr::round_any(pbcseq$futime, 100, f = floor) / 100) + 1
 ```
 
 
 In our dataset, we do not have data that is exactly at each 100 days of treatment. Thus, we will need to create a bigger dataset and fill in the necessary gaps in order for RF-SLAM to function properly. Here, we calculate how big a dataframe we need based on the `max_cpiu` values just calculated.
 ```{r}
-final_cpius <- pbcseq %>% group_by(id) %>% dplyr::summarise(max(max_cpiu))
-colnames(final_cpius) <- c("id", "max(cpiu)")
+final_cpius <- pbcseq %>% group_by(id) %>% dplyr::summarise(`max(cpiu)` = max(max_cpiu))
 nrows_needed <- sum(final_cpius$`max(cpiu)`)
 ```
 
@@ -102,7 +100,6 @@ for (i in 1:nrow(final_cpius)) {
 Now let's merge together our actual dataset and the blank one we made to create the final dataframe where we will still have a lot of NA values.
 ```{r}
 pbc_tomerge <- pbcseq %>% select(-c(max_cpiu))
-
 test <- full_df %>% full_join(pbc_tomerge, by = c("id", "day"))
 test <- arrange(test, id, day)
 ```
@@ -126,14 +123,10 @@ To capture the fact that every interval is not exactly 100 days, RF-SLAM using r
 test <- test %>% mutate(next_day = lead(day))
 test$next_day <- ifelse((test$next_day == 0) | is.na(test$next_day), test[,"futime"], test[,"next_day"])
 test$risk_time <- (test$next_day - test$day) / 100
-
 test <- test %>% select(-c(futime, next_day))
-
 test <- test %>% mutate(next_id = lead(id), next_death = lead(death))
 test[(test$next_id == test$id) & (test$death == 1), "death"] <- 0
-
 test <- test %>% select(-c(next_death))
-
 test$risk_time <- ifelse(test$risk_time == 0, 1, test$risk_time)
 ```
 
@@ -144,7 +137,6 @@ create_labels <- function(df, x = 5) {
   df$label <- labels
   return(df)
 }
-
 final_df <- data.frame(test %>% dplyr::group_by(id) %>% dplyr::group_modify(.f = create_labels))
 ```
 
@@ -153,12 +145,9 @@ final_df <- data.frame(test %>% dplyr::group_by(id) %>% dplyr::group_modify(.f =
 Finally, let's do some data cleaning to turn `sex` into a numeric value and create the extra `int.n` column that we need for the RF-SLAM functions.
 ```{r}
 final_df$sex <- ifelse(final_df$sex == 'f', 1, 0)
-
 final_df <- final_df %>% select(-c(next_id, death))
-
 final_df$int.n <- final_df$cpiu
 final_df <- filter(final_df, !duplicated(final_df[,c("id", "label")]) | label == 0) #ask about whether we should do this step or not
-
 final_df$days_since_cpiu_start <- final_df$day - (final_df$cpiu - 1)*100
 ```
 
@@ -195,14 +184,11 @@ best_params
 Let's train the final model using the optimal parameters and then look at feature importance, calibration, and an rpart summary tree. In addition, here we calibrate the final trained model using the `calibrate.model()` function.
 ```{r}
 forest <- create_model(df[,!(names(df) %in% drop[drop != sym("death")])], "label", "pid", "risk_time", "int.n", "cpiu", ntree = 100, nodedepth = NULL, nsplit = 5)
-
 mymodel.1.full_1day <- forest$model
 p.cpiu.be.ppl_1day <- forest$preds
-
 df$p.hat <- calibrate.model(p.cpiu.be.ppl_1day, df, "label", "cpiu")
 analysis_vars <- colnames(df %>% select(-c(pid, status, label, risk_time, int.n)))
 analysis_plots(df, "label", "pid", "p.hat", "cpiu", analysis_vars)
-
 feature_importance_plot(mymodel.1.full_1day, var_key, importance_threshold = 10) #plot feature importance
 ```
 
@@ -217,5 +203,4 @@ Here, we can see that the bilirunbin value is most important since it is the top
 
 ### Feature Importance
 The feature importance plot shows the percentage of trees each variable is present in in the random forest. The more trees the variable is in, the more often it is used for splitting when making predictions, and thus the more important it is. As we might expect, the top variables we see in the plot line up with the most important variables according to the rpart trees, such as the bilirunbin and edema values.
-
 
