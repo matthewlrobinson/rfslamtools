@@ -189,7 +189,7 @@ p.cpiu.be.ppl_1day <- forest$preds
 df$p.hat <- calibrate.model(p.cpiu.be.ppl_1day, df, "label", "cpiu")
 analysis_vars <- colnames(df %>% select(-c(pid, status, label, risk_time, int.n)))
 analysis_plots(df, "label", "pid", "p.hat", "cpiu", analysis_vars)
-feature_importance_plot(mymodel.1.full_1day, var_key, importance_threshold = 10) #plot feature importance
+
 ```
 
 ## Interpretation of Plots
@@ -203,4 +203,8 @@ Here, we can see that the bilirunbin value is most important since it is the top
 
 ### Feature Importance
 The feature importance plot shows the percentage of trees each variable is present in in the random forest. The more trees the variable is in, the more often it is used for splitting when making predictions, and thus the more important it is. As we might expect, the top variables we see in the plot line up with the most important variables according to the rpart trees, such as the bilirunbin and edema values.
+```{r feature importance plot}
+feature_importance_plot(mymodel.1.full_1day, var_key, importance_threshold = 10) 
+```
+
 
