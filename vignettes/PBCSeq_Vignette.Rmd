@@ -405,12 +405,14 @@ analysis_plots(df, "label", "pid", "p.hat", "cpiu", analysis_vars)
 ## Interpretation of Plots
 ### Calibration 
 The calibration plot shows the relationship between the predicted and observed event probabilities. In particular, a well calibrated model will be one where the values align and a straight line forms on the dotted line in the plot. Here, we see that there are times where we deviate and under predict the event probability, but overall this is satisfactory.
-
+```{r display calibration plot}
+```
 ### Rpart Tree
 The rpart tree is a summary representation of the random forest using a single tree. In particular, it is the result of training a regression tree on the outputted predicted probabilities. Then, we plot a visual representation of the tree so we can understand the predictions. This is a particularly useful technique for clinicians looking to understand their models.
 
 Here, we can see that the bilirunbin value is most important since it is the tope splitting variable. Then edema is second in importance, at the second level of the tree, after which the tree begins to get relatively more complicated. 
-
+```{r plot rpart tree}
+```
 ### Feature Importance
 The feature importance plot shows the percentage of trees each variable is present in in the random forest. The more trees the variable is in, the more often it is used for splitting when making predictions, and thus the more important it is. As we might expect, the top variables we see in the plot line up with the most important variables according to the rpart trees, such as the bilirunbin and edema values.
 ```{r feature importance plot}
