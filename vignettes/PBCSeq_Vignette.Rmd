@@ -172,9 +172,21 @@ Then, we can use the `turn_rf_params()` function to test different user-specifie
 final_df$label <- as.factor(final_df$label)
 final_df$id <- as.factor(final_df$id)
 drop <- c("status")
-df <- final_df
-names(df)[names(df) == "id"] <- "pid"
-best_params <- tune_rf_params(df = df, target = "label", id_col = "pid", risk_time_col = "risk_time", patient_count_col = "int.n", time_col = "cpiu", drop = drop, ntree_trys = c(100, 200), nodedepth_trys = c("NULL", 3), nsplit_trys = c(5, 10), n.folds = 3, folds_stratifier = "status")
+df <- final_df %>% rename(pid = id)
+best_params <- tune_rf_params(
+  df = df,
+  target = "label", 
+  id_col = "pid",
+  risk_time_col = "risk_time",
+  patient_count_col = "int.n",
+  time_col = "cpiu", 
+  drop = drop, 
+  ntree_trys = c(100, 200), 
+  nodedepth_trys = c("NULL", 3), 
+  nsplit_trys = c(5, 10), 
+  n.folds = 3, 
+  folds_stratifier = "status"
+)
 ```
 
 Let's take a look at the output so we can pick a parameter set. Based on the table, we'd say that 100 trees, NULL nodedepth, and an nsplit value of 5 give the best results.
@@ -184,28 +196,44 @@ best_params
 
 Let's train the final model using the optimal parameters and then look at feature importance, calibration, and an rpart summary tree. In addition, here we calibrate the final trained model using the `calibrate.model()` function.
 ```{r}
-forest <- create_model(df[,!(names(df) %in% drop[drop != sym("death")])], "label", "pid", "risk_time", "int.n", "cpiu", ntree = 100, nodedepth = NULL, nsplit = 5)
-mymodel.1.full_1day <- forest$model
-p.cpiu.be.ppl_1day <- forest$preds
-df$p.hat <- calibrate.model(p.cpiu.be.ppl_1day, df, "label", "cpiu")
-analysis_vars <- colnames(df %>% select(-c(pid, status, label, risk_time, int.n)))
-analysis_plots(df, "label", "pid", "p.hat", "cpiu", analysis_vars)
+forest <- df %>% 
+  select(-all_of(drop)) %>% 
+  create_model("label", "pid", "risk_time", "int.n", "cpiu", ntree = 100, nodedepth = NULL, nsplit = 5)
 
+df_with_predictions <- df %>% 
+  mutate(p.hat = 
+           calibrate.model(
+              p.hat = forest$preds, 
+              rf.df.1 = df,
+              target_varname = "label",
+              time_varname = "cpiu")
+)
+
+analysis_vars <- df_with_predictions %>% 
+  select(-c(pid, status, label, risk_time, int.n)) %>% 
+  names()
 ```
-
-## Interpretation of Plots
-### Calibration 
-The calibration plot shows the relationship between the predicted and observed event probabilities. In particular, a well calibrated model will be one where the values align and a straight line forms on the dotted line in the plot. Here, we see that there are times where we deviate and under predict the event probability, but overall this is satisfactory.
-
-### Rpart Tree
-The rpart tree is a summary representation of the random forest using a single tree. In particular, it is the result of training a regression tree on the outputted predicted probabilities. Then, we plot a visual representation of the tree so we can understand the predictions. This is a particularly useful technique for clinicians looking to understand their models.
-
-Here, we can see that the bilirunbin value is most important since it is the tope splitting variable. Then edema is second in importance, at the second level of the tree, after which the tree begins to get relatively more complicated. 
 
 ### Feature Importance
 The feature importance plot shows the percentage of trees each variable is present in in the random forest. The more trees the variable is in, the more often it is used for splitting when making predictions, and thus the more important it is. As we might expect, the top variables we see in the plot line up with the most important variables according to the rpart trees, such as the bilirunbin and edema values.
 ```{r feature importance}
-feature_importance_plot(mymodel.1.full_1day, var_key, importance_threshold = 10) #plot feature importance
+feature_importance_plot(forest$model, var_key, importance_threshold = 10) #plot feature importance
 ```
+### Rpart Tree
+The rpart tree is a summary representation of the random forest using a single tree. In particular, it is the result of training a regression tree on the outputted predicted probabilities. Then, we plot a visual representation of the tree so we can understand the predictions. This is a particularly useful technique for clinicians looking to understand their models.
 
+Here, we can see that the bilirunbin value is most important since it is the top splitting variable. Then edema is second in importance, at the second level of the tree, after which the tree begins to get relatively more complicated. 
+```{r}
+rpart_summary(df_with_predictions,'p.hat',vars_list)
+```
+## Interpretation of Plots
+### Calibration 
+The calibration plot shows the relationship between the predicted and observed event probabilities. In particular, a well calibrated model will be one where the values align and a straight line forms on the dotted line in the plot. Here, we see that there are times where we deviate and under predict the event probability, but overall this is satisfactory.
+```{r}
+calibration_plot(df_with_predictions, target = "label", risk_col = 'p.hat', vars_list) 
+```
+Or use one function to display all relevant plots
+```{r}
+analysis_plots(df_with_predictions, "label", "pid", "p.hat", "cpiu", analysis_vars)
+```
 >>>>>>> edf95dbd20089afb163d0bf858af2fca82cdd594

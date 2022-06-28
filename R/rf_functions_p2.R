@@ -35,22 +35,28 @@ auc.smooth <- function(data, auc, target, patient_count_col){
 #' @return a weighted average of the time varying CPIU values using weighting based on the number of patients available in each CPIU
 #' @export
 auc.smooth.return.single <- function(data, auc, target, patient_count_col){
+
   data[, target] <- as.numeric(as.character(data[, target]))
   names(data)[names(data) == patient_count_col] <- "int.n"
   names(data)[names(data) == target] <- "target"
   boot.df.rep <- data
 
+
   events.df <- boot.df.rep %>% dplyr::group_by(int.n) %>% dplyr::summarise(pos = sum(target))
+
   events.df <- as.data.frame(events.df)
+
   events.df.pos <- events.df %>% filter(pos > 0 )
   auc.df <- auc
   names(auc.df)[1] <- "int.n"
   events.df.pos <- left_join(auc.df, events.df.pos, by = "int.n")
+
   events.df.pos$auc <- ifelse(events.df.pos$auc>0.95, 0.95, events.df.pos$auc)
   events.df.pos$auc <- ifelse(events.df.pos$auc<0.05, 0.05, events.df.pos$auc)
   events.df.pos <- events.df.pos %>% mutate(var = (auc)*(1-auc)/pos)
   events.df.pos <- events.df.pos %>% mutate(w = 1/var)
   weighted_avg_auc <- sum((events.df.pos$auc * events.df.pos$num_individuals) / sum(events.df.pos$num_individuals))
+
   return(weighted_avg_auc)
 }
 
@@ -71,7 +77,6 @@ rf.auc <- function(sca1.df = data, target, patient_count_col, time_col){
   status <- sca1.df[,"target"] # 0/1 indicators
   int <- sca1.df[index, "int.n"] # interval numbers for sca
   n <- length(index)
-
   int <- int[order(times)] # order the event times
   int <- unique(int)
   n <- length(int)
@@ -82,10 +87,9 @@ rf.auc <- function(sca1.df = data, target, patient_count_col, time_col){
 
     int.index <- which(sca1.df$int.n == int[i]) # only consider individuals at risk at the current interval in consideration
     chf <- sca1.df[int.index, c("pid", "target", "p.hat")]
-    auc.df.p[i,2] <- auc(chf$target, chf$p.hat)
+    auc.df.p[i,2] <- auc(chf$target, chf$p.hat, quiet = TRUE)
     auc.df.p[i,3] <- nrow(chf)
   }
-
   return(auc.df.p)
 }
 
@@ -194,16 +198,28 @@ risk.adjust.new.be <- function(rf, status, rt, new_data, k = 2, alpha.tm = 0.05)
 #' @description \code{analysis_plots} creates plots of both the calibration of the random forest and the rpart summary tree
 #' @param rf.df.1 the dataframe
 #' @param target the column name of the target variable
-#' @param id_Col the column name of the patient id variable
 #' @param time_col the column name with the cpiu values
 #' @param vars_list the variables used in training the random forest
 #' @return shows the calibration and rpart plots for the model
-analysis_plots <- function(rf.df.1, target, id_col, risk_col, time_col, vars_list) {
-  set.seed(321)
+analysis_plots <- function(rf.df.1, target, risk_col, time_col, vars_list) {
+  calibration_plot(rf.df.1, target, risk_col, vars_list)
+  rpart_summary(rf.df.1, risk_col, vars_list)
+}
 
-  db2 <- rf.df.1 %>% mutate(ni.sca = (as.numeric(rf.df.1[,target]) - 1)) %>% mutate(i.sca = rf.df.1[,target]) %>% mutate(timescd = as.numeric(rf.df.1[,time_col])) %>% mutate(int.n = as.numeric(rf.df.1[,time_col]))
-  db2$pid <- rf.df.1[,id_col]
-  db2$p.hat <- rf.df.1[,risk_col]
+
+#' @export
+#' @title Create Analysis Plots
+#' @description \code{analysis_plots} creates plots of both the calibration of the random forest and the rpart summary tree
+#' @param rf.df.1 the dataframe
+#' @param target the column name of the target variable
+#' @param risk_col the column with the probabilty of having the outcome of interest
+#' @param vars_list the variables used in training the random forest
+#' @return shows the calibration and rpart plots for the model
+calibration_plot <- function(rf.df.1, target, risk_col, vars_list) {
+  db2 <- rf.df.1 %>%
+    mutate(ni.sca = get(target) %>% as.character %>% as.numeric,
+           p.hat = get(risk_col)
+    )
 
   g1 <- mutate(db2, bin = ntile(p.hat, 10)) %>%
     # Bin prediction into 10ths
@@ -240,11 +256,21 @@ analysis_plots <- function(rf.df.1, target, id_col, risk_col, time_col, vars_lis
 
   grid.newpage()
   grid.draw(g)
+}
 
 
-  ##Rpart Plot
-  analysis_vec <- vars_list
-  tree.df <- db2[,intersect(c(analysis_vec, "p.hat"), colnames(db2))]
+#' @export
+#' @title Create Analysis Plots
+#' @description \code{analysis_plots} creates plots of both the calibration of the random forest and the rpart summary tree
+#' @param rf.df.1 the dataframe
+#' @param risk_col the column with the probabilty of having the outcome of interest
+#' @param vars_list the variables used in training the random forest
+#' @return shows the rpart plot for the model
+rpart_summary <- function(rf.df.1, risk_col,  vars_list){
+  set.seed(321)
+  db2 <- rf.df.1 %>%  mutate( p.hat = get(risk_col) )
+
+  tree.df <- db2[,intersect(c(vars_list, "p.hat"), colnames(db2))]
   global.tree.1 <- rpart(p.hat ~., data = tree.df, control = rpart.control(cp = 0.005))
   tree.global.predict <- predict(global.tree.1, newdata = tree.df)
   preds <- tree.global.predict
@@ -327,6 +353,7 @@ create_model <- function(modeling_df, target, id_col, risk_time_col, patient_cou
 #' @param nsplit the nsplit parameter for random forest
 #' @return the average weighted auc value across all of the folds
 cv_model_with_auc <- function(modeling_df, target, id_col, risk_time_col, patient_count_col = "int.n", time_col, n.folds,folds_stratifier, drop, ntree = 100, nodedepth = NULL, nsplit = 10) {
+
   all_auc <- c()
   data_for_folds <-  modeling_df %>% select(!!folds_stratifier, !!id_col) %>% distinct(.)
   folds <- caret::createFolds(data_for_folds[,folds_stratifier], k = n.folds, list = FALSE)
@@ -341,11 +368,9 @@ cv_model_with_auc <- function(modeling_df, target, id_col, risk_time_col, patien
     test <- .modeling_df %>% filter(fold != j)
     test <- rbind(train[1, ] , test)
     test <- test[-1,]
-
     model_pieces <- create_model(train[,!(names(train) %in% .drop[.drop != sym(.target)])], .target, .id_col, .risk_time_col , .patient_count_col, .time_col, .ntree, .nodedepth, .nsplit)
     rf <- model_pieces$model
     test <-  test %>% select(-c(fold))
-
 
     # train_check <<- train
     # forest <<- rf
@@ -383,9 +408,9 @@ cv_model_with_auc <- function(modeling_df, target, id_col, risk_time_col, patien
 tune_rf_params <- function(df, target, id_col, risk_time_col, patient_count_col = "int.n", time_col, drop, ntree_trys = c(50, 100, 200, 500), nodedepth_trys = c(NULL, 3, 5), nsplit_trys = c(5, 10, 15), n.folds = 5, folds_stratifier) {
 
   parameter_combos <- expand.grid(n_trees = ntree_trys, nodedepth = nodedepth_trys, nsplit = nsplit_trys)
-
   get_combo_auc <- function(n_tree, nodedepth, nsplit, .df = df, .target = target, .id_col = id_col, .risk_time_col = risk_time_col,
                             .patient_count_col = patient_count_col, .time_col = time_col, .n.folds = n.folds, .drop = drop, .folds_stratifier = folds_stratifier) {
+
     if (nodedepth == "NULL") {
       nodedepth <- NULL
     }
@@ -394,11 +419,9 @@ tune_rf_params <- function(df, target, id_col, risk_time_col, patient_count_col 
     }
     curr_model_auc <- cv_model_with_auc(.df, .target, .id_col, .risk_time_col, .patient_count_col, .time_col, n.folds = .n.folds,
                                         drop = .drop, folds_stratifier = .folds_stratifier, ntree = n_tree, nodedepth = nodedepth, nsplit = nsplit)
-
     avg_curr_auc <- mean(unlist(curr_model_auc))
     return(avg_curr_auc)
   }
-
 
   all_auc <- pmap(list(parameter_combos$n_trees, parameter_combos$nodedepth, parameter_combos$nsplit), .f = get_combo_auc)
   parameter_combos[,"average auc across folds"] <- unlist(all_auc)
