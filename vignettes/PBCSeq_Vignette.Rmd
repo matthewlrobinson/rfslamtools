@@ -224,16 +224,59 @@ The rpart tree is a summary representation of the random forest using a single t
 
 Here, we can see that the bilirunbin value is most important since it is the top splitting variable. Then edema is second in importance, at the second level of the tree, after which the tree begins to get relatively more complicated. 
 ```{r}
-rpart_summary(df_with_predictions,'p.hat',vars_list)
+rpart_summary(
+   rf.df.1 = df_with_predictions, 
+   risk_col = 'p.hat',
+   vars_list = analysis_vars
+ )
 ```
+
+### Time varying AUC
+In a RF-SLAM model, the accuracy will be change depending on what time point is considered. This can be visualized using a time-varying AUC plot
+```{r}
+plot_time_varying_auc(sca1.df = df_with_predictions,
+       target = 'label',
+       patient_count_col =  'int.n',
+       time_col = 'cpiu')  
+```
+
+### AUC at a single point in time
+```{r}
+d1 <- df_with_predictions %>% filter(cpiu == 1) 
+roc(d1$label,d1$p.hat, plot = TRUE, auc = TRUE)
+```
+## Dependence plots
+```{r}
+df_with_predictions %>% 
+  select(all_of(analysis_vars)) %>%
+  select_if(~is.numeric(.) & all(!(. %in% c(0,1)))) %>% 
+  pivot_longer(-p.hat) %>%
+  ggplot(aes(x = value, y= p.hat)) + 
+  geom_smooth(se = FALSE, show.legend = FALSE, method = 'loess', formula = 'y ~ x') + 
+  ylab("Predicted Risk") + theme_classic() + 
+  facet_wrap(vars(name), scales = "free_x") + 
+  ylim(c(0,NA))
+```
+
 ## Interpretation of Plots
 ### Calibration 
 The calibration plot shows the relationship between the predicted and observed event probabilities. In particular, a well calibrated model will be one where the values align and a straight line forms on the dotted line in the plot. Here, we see that there are times where we deviate and under predict the event probability, but overall this is satisfactory.
 ```{r}
-calibration_plot(df_with_predictions, target = "label", risk_col = 'p.hat', vars_list) 
+calibration_plot(
+  rf.df.1 = df_with_predictions, 
+  target = "label", 
+  risk_col = 'p.hat', 
+  vars_list = analysis_vars
+) 
 ```
 Or use one function to display all relevant plots
 ```{r}
-analysis_plots(df_with_predictions, "label", "pid", "p.hat", "cpiu", analysis_vars)
+analysis_plots(
+  rf.df.1 = df_with_predictions,
+  target = "label",
+  risk_col = "p.hat",
+  time_col = "cpiu",
+  vars_list = analysis_vars
+)
 ```
 >>>>>>> edf95dbd20089afb163d0bf858af2fca82cdd594

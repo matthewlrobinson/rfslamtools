@@ -69,11 +69,13 @@ auc.smooth.return.single <- function(data, auc, target, patient_count_col){
 #' @return time varying AUC dataframe with one column for the CPIU and another for the AUC
 #' @export
 rf.auc <- function(sca1.df = data, target, patient_count_col, time_col){
-  names(sca1.df)[names(sca1.df) == patient_count_col] <- "int.n"
-  names(sca1.df)[names(sca1.df) == target] <- "target"
-  names(sca1.df)[names(sca1.df) == time_col] <- "q6"
+  sca1.df <- sca1.df %>% rename(
+    int.n = !!sym(patient_count_col),
+    target = !!sym(target),
+    this_time_col = !!sym(time_col)
+  )
   index <- which(sca1.df$target == 1)# find all intervals where sca occurs
-  times <- sca1.df[index, "q6"] # obtain times
+  times <- sca1.df[index, "this_time_col"] # obtain times
   status <- sca1.df[,"target"] # 0/1 indicators
   int <- sca1.df[index, "int.n"] # interval numbers for sca
   n <- length(index)
@@ -217,8 +219,8 @@ analysis_plots <- function(rf.df.1, target, risk_col, time_col, vars_list) {
 #' @return shows the calibration and rpart plots for the model
 calibration_plot <- function(rf.df.1, target, risk_col, vars_list) {
   db2 <- rf.df.1 %>%
-    mutate(ni.sca = get(target) %>% as.character %>% as.numeric,
-           p.hat = get(risk_col)
+    mutate(ni.sca = !!sym(target) %>% as.character %>% as.numeric,
+           p.hat = !!sym(risk_col)
     )
 
   g1 <- mutate(db2, bin = ntile(p.hat, 10)) %>%
@@ -259,6 +261,28 @@ calibration_plot <- function(rf.df.1, target, risk_col, vars_list) {
 }
 
 
+#' @title Plot time varying AUC
+#' @description \code{rf.auc} calculates the time varying AUC values and returns them in a dataframe
+#' @param sca1.df the data
+#' @param target String variable containing the name of the target
+#' @param patient_count_col String variable containing the name of the column couting the patient number
+#' @param time_col String variable containing the name of the column holding the CPIU number
+#' @return shows a time-varying auc plot
+#' @export
+plot_time_varying_auc <- function(sca1.df = data, target, patient_count_col, time_col){
+  d1 <- rf.auc(sca1.df = sca1.df, target=target, patient_count_col=patient_count_col, time_col=time_col)
+
+  g1 <- d1 %>% ggplot(aes(x = time,y=auc)) + geom_point() + geom_smooth() + theme_classic() + ylab('AUC') + xlab(time_col) + ggtitle('Time-varying AUC')
+  g2 <- d1 %>% ggplot(aes(x = time, y = num_individuals)) + geom_line() + theme_classic() + ylab('Individuals included') + xlab(time_col)
+
+  g <- arrangeGrob(g1, g2, respect = TRUE, heights = c(1, 0.4), ncol = 1)
+
+  grid.newpage()
+  grid.draw(g)
+}
+
+
+
 #' @export
 #' @title Create Analysis Plots
 #' @description \code{analysis_plots} creates plots of both the calibration of the random forest and the rpart summary tree
@@ -268,7 +292,7 @@ calibration_plot <- function(rf.df.1, target, risk_col, vars_list) {
 #' @return shows the rpart plot for the model
 rpart_summary <- function(rf.df.1, risk_col,  vars_list){
   set.seed(321)
-  db2 <- rf.df.1 %>%  mutate( p.hat = get(risk_col) )
+  db2 <- rf.df.1 %>%  mutate( p.hat = !!sym(risk_col) )
 
   tree.df <- db2[,intersect(c(vars_list, "p.hat"), colnames(db2))]
   global.tree.1 <- rpart(p.hat ~., data = tree.df, control = rpart.control(cp = 0.005))
