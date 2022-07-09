@@ -64,7 +64,7 @@ auc.smooth.return.single <- function(data, auc, target, patient_count_col){
 #' @description \code{rf.auc} calculates the time varying AUC values and returns them in a dataframe
 #' @param sca1.df the data
 #' @param target String variable containing the name of the target
-#' @param patient_count_col String variable containing the name of the column couting the patient number
+#' @param patient_count_col String variable containing the name of the column counting the patient number
 #' @param time_col String variable containing the name of the column holding the CPIU number
 #' @return time varying AUC dataframe with one column for the CPIU and another for the AUC
 #' @export
@@ -267,13 +267,21 @@ calibration_plot <- function(rf.df.1, target, risk_col, vars_list) {
 #' @param target String variable containing the name of the target
 #' @param patient_count_col String variable containing the name of the column couting the patient number
 #' @param time_col String variable containing the name of the column holding the CPIU number
+#' @param id_col Variable containing the name of the unique patient identifier
 #' @return shows a time-varying auc plot
 #' @export
-plot_time_varying_auc <- function(sca1.df = data, target, patient_count_col, time_col){
-  d1 <- rf.auc(sca1.df = sca1.df, target=target, patient_count_col=patient_count_col, time_col=time_col)
+plot_time_varying_auc <- function(sca1.df = data, target, patient_count_col, time_col, id_col='pid'){
+  d1 <- rf.auc(sca1.df = sca1.df, target=target, patient_count_col=patient_count_col, time_col=time_col) %>%
+    left_join(
+      sca1.df %>%
+        rename(time := !!sym(time_col)) %>%
+        distinct(time, !!sym(id_col)) %>%
+        group_by(time) %>%
+        summarise(num_unique_patients=n())
+      )
 
   g1 <- d1 %>% ggplot(aes(x = time,y=auc)) + geom_point() + geom_smooth() + theme_classic() + ylab('AUC') + xlab(time_col) + ggtitle('Time-varying AUC')
-  g2 <- d1 %>% ggplot(aes(x = time, y = num_individuals)) + geom_line() + theme_classic() + ylab('Individuals included') + xlab(time_col)
+  g2 <- d1 %>% ggplot(aes(x = time, y = num_unique_patients)) + geom_line() + theme_classic() + ylab('Individuals included') + xlab(time_col)
 
   g <- arrangeGrob(g1, g2, respect = TRUE, heights = c(1, 0.4), ncol = 1)
 
@@ -289,8 +297,10 @@ plot_time_varying_auc <- function(sca1.df = data, target, patient_count_col, tim
 #' @param rf.df.1 the dataframe
 #' @param risk_col the column with the probabilty of having the outcome of interest
 #' @param vars_list the variables used in training the random forest
+#' @param no_n if no_n is TRUE, will hide the number of cpiu's in the nodes
 #' @return shows the rpart plot for the model
-rpart_summary <- function(rf.df.1, risk_col,  vars_list){
+rpart_summary <- function(rf.df.1, risk_col,  vars_list, no_n = FALSE){
+  which_extra = if_else(no_n,0,1)
   set.seed(321)
   db2 <- rf.df.1 %>%  mutate( p.hat = !!sym(risk_col) )
 
@@ -299,7 +309,7 @@ rpart_summary <- function(rf.df.1, risk_col,  vars_list){
   tree.global.predict <- predict(global.tree.1, newdata = tree.df)
   preds <- tree.global.predict
   actual <- tree.df$p.hat
-  rpart.plot(global.tree.1, box.palette = "Reds", extra = 1, cex = 0.6, type = 5)
+  rpart.plot(global.tree.1, box.palette = "Reds", extra = which_extra, cex = 0.6, type = 5)
 }
 
 #' @export
@@ -320,7 +330,7 @@ feature_importance_plot <- function(mymodel.1.full, var_key, importance_threshol
   }
   var.tree.sumC <- colSums(vars.tree)
   var.tree.sumR <- rowSums(vars.tree)
-  var.used <- data.frame(Variable = names(var.tree.sumC), perc_tree = unname(var.tree.sumC)) %>% filter(perc_tree>importance_threshold)
+  var.used <- data.frame(Variable = names(var.tree.sumC), perc_tree = unname(100 * var.tree.sumC/nrow(vars.tree))) %>% filter(perc_tree>importance_threshold)
 
   var.used <- left_join(var.used,var_key, by = "Variable")
 

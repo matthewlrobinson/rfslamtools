@@ -1,6 +1,6 @@
 <<<<<<< HEAD
---
-title: "PC"
+---
+title: "PBC Vignette"
 output: html_document
 ---
 
@@ -230,12 +230,21 @@ rpart_summary(
    vars_list = analysis_vars
  )
 ```
-
+If  we want to hide the number of CPIUs in each node, we can do the following
+```{r}
+rpart_summary(
+   rf.df.1 = df_with_predictions, 
+   risk_col = 'p.hat',
+   vars_list = analysis_vars, 
+   no_n =TRUE
+ )
+```
 ### Time varying AUC
 In a RF-SLAM model, the accuracy will be change depending on what time point is considered. This can be visualized using a time-varying AUC plot
 ```{r}
 plot_time_varying_auc(sca1.df = df_with_predictions,
        target = 'label',
+       id_col = 'pid',
        patient_count_col =  'int.n',
        time_col = 'cpiu')  
 ```
